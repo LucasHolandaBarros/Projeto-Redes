@@ -6,8 +6,24 @@ PORT = 55551
 client = socket(AF_INET, SOCK_STREAM)
 client.connect((HOST, PORT))
 
-print("Conexão efetuada com o servidor!")
-print(f"\nConexão: Host {HOST} Porta {PORT}\n")
+print("\nEscolha o modo de operação: ")
+print("[1] - Go-Back-N")
+print("[2] - Repetição Seletiva")
+
+modo = input("Digite o número da operação: ")
+client.send(modo.encode())
+
+if modo == "1":
+    print("\nModo escolhido: Go-Back-N")
+elif modo == "2":
+    print("\nModo escolhido: Repetição Seletiva")
+else:
+    print("\nModo invalido!")
+    print("Encerrando a conexao com o servidor...")
+    exit()
+
+print("\nConexão efetuada com o servidor!")
+print(f"Conexão: Host {HOST} Porta {PORT}\n")
 
 print("Digite a quantidade de caracteres a ser digitado: ")
 qntd = int(input())
