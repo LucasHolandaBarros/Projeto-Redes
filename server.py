@@ -11,6 +11,9 @@ server.bind((HOST, PORT))
 server.listen(5)
 
 con, adr = server.accept()
+print("SYN recebido do cliente")
+print("Enviando SYN-ACK")
+print("ACK recebido do cliente")
 print(f'Cliente conectado: {adr}\n')
 
 modo = con.recv(1).decode()
