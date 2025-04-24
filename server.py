@@ -1,5 +1,8 @@
 from socket import *
 
+def calcular_checksum(dados):
+    return sum(dados.encode()) % 256
+
 HOST = '127.0.0.1'
 PORT = 55551
 
@@ -36,17 +39,23 @@ while True:
         print("\n[Servidor] Comunicação encerrada pelo cliente.")
         break
 
-    if "|" in pacote:
-        seq_str, payload = pacote.split("|", 1)
-        print(f"[SERVIDOR] Pacote #{seq_str} recebido com carga: '{payload}'")
-        mensagem_completa += payload
-        total_recebido += len(payload)
+    partes = pacote.split("|")
+    if len(partes) == 3:
+        seq_str, payload, recebido_checksum = partes
+        calculado_checksum = calcular_checksum(payload)
 
-        ack = f"ACK {seq_str}"
+        if int(recebido_checksum) == calculado_checksum:
+            print(f"[SERVIDOR] Pacote #{seq_str} OK. Payload: '{payload}'")
+            mensagem_completa += payload
+            total_recebido += len(payload)
+            ack = f"ACK {seq_str}"
+        else:
+            print(f"[SERVIDOR] ERRO de checksum no pacote #{seq_str}")
+            ack = f"NAK {seq_str}"
         con.send(ack.encode())
     else:
-        print("[SERVIDOR] Pacote inválido (sem '|')")
-        con.send(b"ACK ?")  # resposta para pacote mal formatado
+        print("[SERVIDOR] Pacote mal formatado.")
+        con.send(b"ACK ?")
 
 print(f"\n[SERVIDOR] Mensagem reconstruída: {mensagem_completa}")
 con.close()

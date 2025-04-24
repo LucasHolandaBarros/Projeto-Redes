@@ -1,5 +1,8 @@
 from socket import *
 
+def calcular_checksum(dados):
+    return sum(dados.encode()) % 256
+
 HOST = '127.0.0.1'
 PORT = 55551
 
@@ -37,13 +40,14 @@ while total_enviado < qntd_total:
     if mensagem.lower() == "fim":
         break
 
-    mensagem = mensagem[:restante]  # Garante que não ultrapassa o limite
+    mensagem = mensagem[:restante]
     i = 0
     while i < len(mensagem):
         payload = mensagem[i:i+3]
-        pacote = f"{seq_num}|{payload}"
+        checksum = calcular_checksum(payload)
+        pacote = f"{seq_num}|{payload}|{checksum}"
         client.send(pacote.encode())
-        print(f"[CLIENTE] Enviado pacote #{seq_num} com carga '{payload}'")
+        print(f"[CLIENTE] Enviado pacote #{seq_num} com carga '{payload}' e checksum {checksum}")
 
         ack = client.recv(1024).decode()
         print(f"[CLIENTE] Recebido: {ack}")
