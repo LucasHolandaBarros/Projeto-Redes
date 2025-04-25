@@ -1,79 +1,94 @@
+import socket
 import time
-from socket import *
-
-def calcular_checksum(dados):
-    return sum(dados.encode()) % 256
 
 HOST = '127.0.0.1'
-PORT = 55551
+PORT = 5000
+TAMANHO_PACOTE = 3
+WINDOW_SIZE = 4
 
-client = socket(AF_INET, SOCK_STREAM)
-client.connect((HOST, PORT))
+def calcular_checksum(seq_num, payload):
+    soma = seq_num + sum(ord(c) for c in payload)
+    return soma % 256
 
-# Escolha de modo
-print("\nEscolha o modo de operação:")
-print("[1] - Go-Back-N")
-print("[2] - Repetição Seletiva")
-modo = input("Digite o número da operação: ")
-client.send(modo.encode())
+def criar_pacote(seq_num, payload):
+    checksum = calcular_checksum(seq_num, payload)
+    return f"{seq_num}|{payload}|{checksum}"
 
-if modo == "1":
-    print("\nModo escolhido: Go-Back-N")
-elif modo == "2":
-    print("\nModo escolhido: Repetição Seletiva")
-else:
-    print("\nModo inválido! Encerrando conexão.")
-    client.close()
-    exit()
+def quebrar_mensagem(msg, limite):
+    msg = msg[:limite]  # Garante o limite máximo da mensagem
+    pacotes = []
+    for i in range(0, len(msg), TAMANHO_PACOTE):
+        payload = msg[i:i + TAMANHO_PACOTE]
+        pacotes.append((i // TAMANHO_PACOTE, payload))
+    return pacotes
 
-# Limite de caracteres
-print("\nDigite o total estimado de caracteres a enviar:")
-qntd_total = int(input("Total: "))
-client.send(str(qntd_total).encode())
+def cliente():
+    protocolo = input("Escolha o protocolo (1 - Go-Back-N, 2 - Repetição Seletiva): ")
+    modo = "GBN" if protocolo == "1" else "SR"
 
-seq_num = 0
-total_enviado = 0
-timeout = 2  # Tempo de espera em segundos para o ACK
+    tamanho_msg = int(input("Digite o tamanho máximo da mensagem: "))
+    mensagem = input("Digite a mensagem a ser enviada: ")
 
-while total_enviado < qntd_total:
-    restante = qntd_total - total_enviado
-    mensagem = input(f"Digite 'fim' p/ sair: ")
+    pacotes = quebrar_mensagem(mensagem, tamanho_msg)
+    total_pacotes = len(pacotes)
 
-    if mensagem.lower() == "fim":
-        break
+    with socket.socket(socket.AF_INET, socket.SOCK_STREAM) as s:
+        s.connect((HOST, PORT))
+        s.sendall((modo + "\n").encode())  # Envia o modo com quebra de linha
 
-    mensagem = mensagem[:restante]
-    i = 0
-    while i < len(mensagem):
-        payload = mensagem[i:i+3]
-        checksum = calcular_checksum(payload)
-        pacote = f"{seq_num}|{payload}|{checksum}"
-        
-        # Marca o início do envio
-        start_time = time.time()
-        
-        client.send(pacote.encode())
-        print(f"[CLIENTE] Enviado pacote #{seq_num} com carga '{payload}' e checksum {checksum}")
-        
-        # Começando o temporizador para esperar pelo ACK
-        ack_recebido = False
-        while not ack_recebido:
-            ack = client.recv(1024).decode()
-            if ack:  # Se o ACK for recebido
-                ack_recebido = True
-                # Marca o fim do tempo de recebimento do ACK
-                end_time = time.time()
-                tempo_transmissao = end_time - start_time
-                print(f"[CLIENTE] ACK {seq_num} confirmado. Tempo de transmissão: {tempo_transmissao:.4f} segundos.")
-            elif time.time() - start_time > timeout:  # Se o tempo de espera foi excedido
-                print(f"[CLIENTE] Timeout. Reenviando pacote #{seq_num}")
-                client.send(pacote.encode())  # Reenvia o pacote
-                start_time = time.time()  # Reinicia o temporizador
+        print(f"\n[Cliente] Modo: {modo} | Janela: {WINDOW_SIZE} | Total de pacotes: {total_pacotes}\n")
 
-        seq_num += 1
-        total_enviado += len(payload)
-        i += 3
+        base = 0
+        next_seq = 0
+        acked = [False] * total_pacotes
+        tempos_envio = {}
 
-print("\nFim do envio. Encerrando conexão.")
-client.send(b"fim")
-client.close()
+        while base < total_pacotes:
+            # Envia os pacotes dentro da janela
+            while next_seq < base + WINDOW_SIZE and next_seq < total_pacotes:
+                pacote = criar_pacote(*pacotes[next_seq])
+                tempos_envio[next_seq] = time.time()
+                s.sendall((pacote + "\n").encode())
+                print(f"[Cliente] ➡️ Enviado pacote {next_seq}: {pacote}")
+                next_seq += 1
+
+            # Aguarda ACKs
+            resposta_buffer = ""
+            while not "\n" in resposta_buffer:
+                dados = s.recv(1024)
+                if not dados:
+                    break
+                resposta_buffer += dados.decode()
+
+            respostas = resposta_buffer.strip().split("\n")
+            for resposta in respostas:
+                partes = resposta.strip().split("|")
+                if len(partes) != 2:
+                    print(f"[Cliente] ❌ ACK inválido recebido: {resposta}")
+                    continue
+
+                tipo, ack_seq = partes
+                ack_seq = int(ack_seq)
+
+                rtt = time.time() - tempos_envio[ack_seq]
+                print(f"[Cliente] ⬅️ ACK recebido do pacote {ack_seq} | RTT: {rtt:.3f}s")
+
+                acked[ack_seq] = True
+                if modo == "GBN":
+                    if ack_seq == base:
+                        while base < total_pacotes and acked[base]:
+                            base += 1
+                else:  # SR
+                    # Aceita qualquer ACK, mesmo que fora de ordem
+                    if ack_seq < total_pacotes:
+                        acked[ack_seq] = True  # Marca o pacote como confirmado
+                        print(f"[Cliente] ⬅️ ACK recebido do pacote {ack_seq} | RTT: {rtt:.3f}s")
+
+                    # Move a base da janela quando os pacotes anteriores foram confirmados
+                    while base < total_pacotes and acked[base]:
+                        base += 1
+
+        print("\n[Cliente] ✅ Comunicação finalizada.")
+
+if __name__ == "__main__":
+    cliente()

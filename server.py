@@ -1,63 +1,62 @@
-from socket import *
-import time
-
-def calcular_checksum(dados):
-    return sum(dados.encode()) % 256
+import socket
 
 HOST = '127.0.0.1'
-PORT = 55551
+PORT = 5000
 
-server = socket(AF_INET, SOCK_STREAM)
-server.bind((HOST, PORT))
-server.listen(5)
+def calcular_checksum(seq_num, payload):
+    soma = seq_num + sum(ord(c) for c in payload)
+    return soma % 256
 
-print(f"\n[Servidor] Aguardando conexão em {HOST}:{PORT}...")
-con, addr = server.accept()
-print(f"[Servidor] Conectado ao cliente: {addr}")
+def servidor():
+    with socket.socket(socket.AF_INET, socket.SOCK_STREAM) as s:
+        s.bind((HOST, PORT))
+        s.listen()
+        print(f"[Servidor] Aguardando conexão em {HOST}:{PORT}...\n")
 
-# Modo de operação
-modo = con.recv(1).decode()
-if modo == "1":
-    print("\nModo escolhido pelo cliente: Go-Back-N")
-elif modo == "2":
-    print("\nModo escolhido pelo cliente: Repetição Seletiva")
-else:
-    print("\nModo inválido! Encerrando servidor.")
-    con.close()
-    server.close()
-    exit()
+        conn, addr = s.accept()
+        with conn:
+            print(f"[Servidor] Conectado por {addr}")
 
-# Quantidade esperada de caracteres
-qntd_total = int(con.recv(1024).decode())
-print(f"[Servidor] Cliente pretende enviar aproximadamente {qntd_total} caracteres.\n")
+            buffer = ""
+            modo = ""
+            pacotes_recebidos = {}
 
-mensagem_completa = ""
-total_recebido = 0
+            # Recebe o modo primeiro
+            while "\n" not in buffer:
+                buffer += conn.recv(1024).decode()
+            modo, buffer = buffer.split("\n", 1)
+            modo = modo.strip()
+            print(f"[Servidor] Modo de operação: {modo}\n")
 
-while True:
-    pacote = con.recv(1024).decode()
-    if not pacote or pacote.lower() == "fim":
-        print("\n[Servidor] Comunicação encerrada pelo cliente.")
-        break
+            while True:
+                data = conn.recv(1024)
+                if not data:
+                    break
+                buffer += data.decode()
 
-    partes = pacote.split("|")
-    if len(partes) == 3:
-        seq_str, payload, recebido_checksum = partes
-        calculado_checksum = calcular_checksum(payload)
+                while "\n" in buffer:
+                    linha, buffer = buffer.split("\n", 1)
+                    partes = linha.strip().split("|")
+                    if len(partes) != 3:
+                        print("[Servidor] ❌ Pacote inválido:", linha)
+                        continue
 
-        if int(recebido_checksum) == calculado_checksum:
-            print(f"[SERVIDOR] Pacote #{seq_str} OK. Payload: '{payload}'")
-            mensagem_completa += payload
-            total_recebido += len(payload)
-            ack = f"ACK {seq_str}"
-        else:
-            print(f"[SERVIDOR] ERRO de checksum no pacote #{seq_str}")
-            ack = f"NAK {seq_str}"
-        con.send(ack.encode())
-    else:
-        print("[SERVIDOR] Pacote mal formatado.")
-        con.send(b"ACK ?")
+                    seq_num = int(partes[0])
+                    payload = partes[1]
+                    checksum = int(partes[2])
+                    esperado = calcular_checksum(seq_num, payload)
 
-print(f"\n[SERVIDOR] Mensagem reconstruída: {mensagem_completa}")
-con.close()
-server.close()
+                    print(f"[Servidor] 📦 Pacote: seq={seq_num}, payload='{payload}', checksum={checksum} (esperado: {esperado})")
+
+                    if checksum == esperado:
+                        if seq_num not in pacotes_recebidos:
+                            pacotes_recebidos[seq_num] = payload
+                            conn.sendall(f"ACK|{seq_num}\n".encode())
+                        else:
+                            print(f"[Servidor] ✅ Pacote {seq_num} já processado, ACK não enviado novamente.")
+
+            mensagem_final = ''.join(pacotes_recebidos[i] for i in sorted(pacotes_recebidos))
+            print(f"\n[Servidor] ✅ Mensagem reconstruída: '{mensagem_final}'")
+
+if __name__ == "__main__":
+    servidor()
