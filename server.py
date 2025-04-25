@@ -23,7 +23,12 @@ def servidor():
 
             # Recebe o modo primeiro
             while "\n" not in buffer:
-                buffer += conn.recv(1024).decode()
+                dados = conn.recv(1024)
+                if not dados:
+                    print("[Servidor] ❌ Conexão encerrada antes de receber o modo.")
+                    return
+                buffer += dados.decode()
+
             modo, buffer = buffer.split("\n", 1)
             modo = modo.strip()
             print(f"[Servidor] Modo de operação: {modo}\n")
@@ -41,22 +46,32 @@ def servidor():
                         print("[Servidor] ❌ Pacote inválido:", linha)
                         continue
 
-                    seq_num = int(partes[0])
-                    payload = partes[1]
-                    checksum = int(partes[2])
-                    esperado = calcular_checksum(seq_num, payload)
+                    try:
+                        seq_num = int(partes[0])
+                        payload = partes[1]
+                        checksum = int(partes[2])
+                    except ValueError:
+                        print("[Servidor] ❌ Erro ao interpretar pacote:", linha)
+                        continue
 
+                    esperado = calcular_checksum(seq_num, payload)
                     print(f"[Servidor] 📦 Pacote: seq={seq_num}, payload='{payload}', checksum={checksum} (esperado: {esperado})")
 
                     if checksum == esperado:
                         if seq_num not in pacotes_recebidos:
                             pacotes_recebidos[seq_num] = payload
                             conn.sendall(f"ACK|{seq_num}\n".encode())
+                            print(f"[Servidor] ✅ Pacote {seq_num} processado e ACK enviado.")
                         else:
-                            print(f"[Servidor] ✅ Pacote {seq_num} já processado, ACK não enviado novamente.")
+                            print(f"[Servidor] ℹ️ Pacote {seq_num} duplicado, ignorado.")
+                    else:
+                        print(f"[Servidor] ❌ Checksum inválido para pacote {seq_num}. Ignorado.")
 
-            mensagem_final = ''.join(pacotes_recebidos[i] for i in sorted(pacotes_recebidos))
-            print(f"\n[Servidor] ✅ Mensagem reconstruída: '{mensagem_final}'")
+            if pacotes_recebidos:
+                mensagem_final = ''.join(pacotes_recebidos[i] for i in sorted(pacotes_recebidos))
+                print(f"\n[Servidor] ✅ Mensagem reconstruída: '{mensagem_final}'")
+            else:
+                print("[Servidor] ⚠️ Nenhum pacote válido recebido.")
 
 if __name__ == "__main__":
     servidor()

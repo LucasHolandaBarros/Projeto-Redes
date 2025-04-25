@@ -15,7 +15,7 @@ def criar_pacote(seq_num, payload):
     return f"{seq_num}|{payload}|{checksum}"
 
 def quebrar_mensagem(msg, limite):
-    msg = msg[:limite]  # Garante o limite máximo da mensagem
+    msg = msg[:limite]
     pacotes = []
     for i in range(0, len(msg), TAMANHO_PACOTE):
         payload = msg[i:i + TAMANHO_PACOTE]
@@ -34,7 +34,7 @@ def cliente():
 
     with socket.socket(socket.AF_INET, socket.SOCK_STREAM) as s:
         s.connect((HOST, PORT))
-        s.sendall((modo + "\n").encode())  # Envia o modo com quebra de linha
+        s.sendall((modo + "\n").encode())
 
         print(f"\n[Cliente] Modo: {modo} | Janela: {WINDOW_SIZE} | Total de pacotes: {total_pacotes}\n")
 
@@ -42,7 +42,7 @@ def cliente():
         next_seq = 0
         acked = [False] * total_pacotes
         tempos_envio = {}
-        ack_recebido = set()  # Conjunto para controlar ACKs já recebidos
+        ack_recebido = set()
 
         while base < total_pacotes:
             # Envia os pacotes dentro da janela
@@ -55,7 +55,7 @@ def cliente():
 
             # Aguarda ACKs
             resposta_buffer = ""
-            while not "\n" in resposta_buffer:
+            while "\n" not in resposta_buffer:
                 dados = s.recv(1024)
                 if not dados:
                     break
@@ -68,30 +68,33 @@ def cliente():
                     print(f"[Cliente] ❌ ACK inválido recebido: {resposta}")
                     continue
 
-                tipo, ack_seq = partes
-                ack_seq = int(ack_seq)
-
-                # Evita imprimir ACKs duplicados
-                if ack_seq in ack_recebido:
+                tipo, ack_seq_str = partes
+                if not ack_seq_str.isdigit():
+                    print(f"[Cliente] ❌ ACK mal formatado: {resposta}")
                     continue
-                ack_recebido.add(ack_seq)
 
-                rtt = time.time() - tempos_envio[ack_seq]
-                print(f"[Cliente] ⬅️ ACK recebido do pacote {ack_seq} | RTT: {rtt:.3f}s")
+                ack_seq = int(ack_seq_str)
 
-                acked[ack_seq] = True
-                if modo == "GBN":
-                    if ack_seq == base:
+                if 0 <= ack_seq < total_pacotes:
+                    if ack_seq in ack_recebido:
+                        continue
+                    ack_recebido.add(ack_seq)
+
+                    if ack_seq in tempos_envio:
+                        rtt = time.time() - tempos_envio[ack_seq]
+                        print(f"[Cliente] ⬅️ ACK recebido do pacote {ack_seq} | RTT: {rtt:.3f}s")
+                    else:
+                        print(f"[Cliente] ⬅️ ACK recebido do pacote {ack_seq}")
+
+                    acked[ack_seq] = True
+
+                    if modo == "GBN":
+                        if ack_seq == base:
+                            while base < total_pacotes and acked[base]:
+                                base += 1
+                    else:  # SR
                         while base < total_pacotes and acked[base]:
                             base += 1
-                else:  # SR
-                    # Aceita qualquer ACK, mesmo que fora de ordem
-                    if ack_seq < total_pacotes:
-                        acked[ack_seq] = True  # Marca o pacote como confirmado
-
-                    # Move a base da janela quando os pacotes anteriores foram confirmados
-                    while base < total_pacotes and acked[base]:
-                        base += 1
 
         print("\n[Cliente] ✅ Comunicação finalizada.")
 
