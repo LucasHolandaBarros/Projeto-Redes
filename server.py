@@ -1,4 +1,5 @@
 from socket import *
+import time
 
 def calcular_checksum(dados):
     return sum(dados.encode()) % 256

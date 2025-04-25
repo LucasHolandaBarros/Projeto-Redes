@@ -1,3 +1,4 @@
+import time
 from socket import *
 
 def calcular_checksum(dados):
@@ -32,6 +33,7 @@ client.send(str(qntd_total).encode())
 
 seq_num = 0
 total_enviado = 0
+timeout = 2  # Tempo de espera em segundos para o ACK
 
 while total_enviado < qntd_total:
     restante = qntd_total - total_enviado
@@ -46,11 +48,27 @@ while total_enviado < qntd_total:
         payload = mensagem[i:i+3]
         checksum = calcular_checksum(payload)
         pacote = f"{seq_num}|{payload}|{checksum}"
+        
+        # Marca o início do envio
+        start_time = time.time()
+        
         client.send(pacote.encode())
         print(f"[CLIENTE] Enviado pacote #{seq_num} com carga '{payload}' e checksum {checksum}")
-
-        ack = client.recv(1024).decode()
-        print(f"[CLIENTE] Recebido: {ack}")
+        
+        # Começando o temporizador para esperar pelo ACK
+        ack_recebido = False
+        while not ack_recebido:
+            ack = client.recv(1024).decode()
+            if ack:  # Se o ACK for recebido
+                ack_recebido = True
+                # Marca o fim do tempo de recebimento do ACK
+                end_time = time.time()
+                tempo_transmissao = end_time - start_time
+                print(f"[CLIENTE] ACK {seq_num} confirmado. Tempo de transmissão: {tempo_transmissao:.4f} segundos.")
+            elif time.time() - start_time > timeout:  # Se o tempo de espera foi excedido
+                print(f"[CLIENTE] Timeout. Reenviando pacote #{seq_num}")
+                client.send(pacote.encode())  # Reenvia o pacote
+                start_time = time.time()  # Reinicia o temporizador
 
         seq_num += 1
         total_enviado += len(payload)
