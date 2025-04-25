@@ -42,6 +42,7 @@ def cliente():
         next_seq = 0
         acked = [False] * total_pacotes
         tempos_envio = {}
+        ack_recebido = set()  # Conjunto para controlar ACKs já recebidos
 
         while base < total_pacotes:
             # Envia os pacotes dentro da janela
@@ -70,6 +71,11 @@ def cliente():
                 tipo, ack_seq = partes
                 ack_seq = int(ack_seq)
 
+                # Evita imprimir ACKs duplicados
+                if ack_seq in ack_recebido:
+                    continue
+                ack_recebido.add(ack_seq)
+
                 rtt = time.time() - tempos_envio[ack_seq]
                 print(f"[Cliente] ⬅️ ACK recebido do pacote {ack_seq} | RTT: {rtt:.3f}s")
 
@@ -82,7 +88,6 @@ def cliente():
                     # Aceita qualquer ACK, mesmo que fora de ordem
                     if ack_seq < total_pacotes:
                         acked[ack_seq] = True  # Marca o pacote como confirmado
-                        print(f"[Cliente] ⬅️ ACK recebido do pacote {ack_seq} | RTT: {rtt:.3f}s")
 
                     # Move a base da janela quando os pacotes anteriores foram confirmados
                     while base < total_pacotes and acked[base]:
