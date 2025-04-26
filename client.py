@@ -11,6 +11,7 @@ def calcular_checksum(seq_num, payload):
     return soma % 256
 
 def criar_pacote(seq_num, payload):
+    payload = payload.ljust(TAMANHO_PACOTE)  # preenche com espaços
     checksum = calcular_checksum(seq_num, payload)
     return f"{seq_num}|{payload}|{checksum}"
 
@@ -27,6 +28,11 @@ def cliente():
     modo = "GBN" if protocolo == "1" else "SR"
 
     tamanho_msg = int(input("Digite o tamanho máximo da mensagem: "))
+
+    # Verifica se o tamanho da mensagem é menor que o tamanho do pacote
+    if tamanho_msg < TAMANHO_PACOTE:
+        tamanho_msg = TAMANHO_PACOTE  # Ajusta o tamanho da mensagem
+
     mensagem = input("Digite a mensagem a ser enviada: ")
 
     pacotes = quebrar_mensagem(mensagem, tamanho_msg)
@@ -34,6 +40,7 @@ def cliente():
 
     with socket.socket(socket.AF_INET, socket.SOCK_STREAM) as s:
         s.connect((HOST, PORT))
+        s.settimeout(2)
         s.sendall((modo + "\n").encode())
 
         print(f"\n[Cliente] Modo: {modo} | Janela: {WINDOW_SIZE} | Total de pacotes: {total_pacotes}\n")
@@ -53,19 +60,22 @@ def cliente():
                 print(f"[Cliente] ➡️ Enviado pacote {next_seq}: {pacote}")
                 next_seq += 1
 
-            # Aguarda ACKs
             resposta_buffer = ""
-            while "\n" not in resposta_buffer:
-                dados = s.recv(1024)
-                if not dados:
-                    break
-                resposta_buffer += dados.decode()
+            try:
+                while "\n" not in resposta_buffer:
+                    dados = s.recv(1024)
+                    if not dados:
+                        break
+                    resposta_buffer += dados.decode()
+            except socket.timeout:
+                pass
 
             respostas = resposta_buffer.strip().split("\n")
             for resposta in respostas:
                 partes = resposta.strip().split("|")
                 if len(partes) != 2:
-                    print(f"[Cliente] ❌ ACK inválido recebido: {resposta}")
+                    if resposta.strip():
+                        print(f"[Cliente] ❌ ACK inválido recebido: {resposta}")
                     continue
 
                 tipo, ack_seq_str = partes
@@ -88,13 +98,13 @@ def cliente():
 
                     acked[ack_seq] = True
 
-                    if modo == "GBN":
-                        if ack_seq == base:
-                            while base < total_pacotes and acked[base]:
-                                base += 1
-                    else:  # SR
-                        while base < total_pacotes and acked[base]:
-                            base += 1
+            # ⬇️ Atualiza o base fora do for
+            if modo == "GBN":
+                while base < total_pacotes and acked[base]:
+                    base += 1
+            else:  # SR
+                while base < total_pacotes and acked[base]:
+                    base += 1
 
         print("\n[Cliente] ✅ Comunicação finalizada.")
 
