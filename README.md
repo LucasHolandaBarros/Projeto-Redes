@@ -20,19 +20,25 @@
  Arthur Vinicius: https://github.com/Art-2005<br>
   
 </details>
-
+<details>
 <summary><h3>🚀 Como iniciar o projeto</h3></summary>
  
  Siga os passos abaixo para rodar o projeto localmente após clonar o repositório:
 
  1° Clone o repositório:
-  Crie um terminal dentro do projeto
+  Crie um terminal dentro do projeto<br><br>
 
-2° Altere a senha do banco de dados:<br>
-  De split no terminal 
-Windows:
-```bash
-$env:DB_PASSWORD="senha"
+2° De um split no terminal:<br>
+  ![Image](https://github.com/user-attachments/assets/4205f8d6-b492-41a6-90d4-b25bbdf6cb58)<br><br>
+
+3° Rode o server.py em um terminal e o client.py no outro:<br>
+ ![Image](https://github.com/user-attachments/assets/db7a05c8-d885-49b3-9297-4506398e49d4)
+ ```bash
+python server.py
 ```
-Ficar atento para campo "senha" ser a senha do seu banco!
+```bash
+python client.py
+```
+<br>
+
 </details>
