@@ -50,6 +50,9 @@ def cliente():
         tempos_envio = {}
         ack_recebido = set()
 
+        timeout_total = 2  # segundos
+        tempo_inicio = time.time()
+
         while base < total_pacotes:
             while next_seq < base + WINDOW_SIZE and next_seq < total_pacotes:
                 pacote = criar_pacote(*pacotes[next_seq])
@@ -69,6 +72,7 @@ def cliente():
                 pass
 
             respostas = resposta_buffer.strip().split("\n")
+            ack_recebido_neste_ciclo = False
             for resposta in respostas:
                 partes = resposta.strip().split("|")
                 if len(partes) != 2:
@@ -84,6 +88,7 @@ def cliente():
                 ack_seq = int(ack_seq_str)
 
                 if 0 <= ack_seq < total_pacotes:
+                    ack_recebido_neste_ciclo = True
                     if ack_seq in ack_recebido:
                         continue
                     ack_recebido.add(ack_seq)
@@ -107,6 +112,14 @@ def cliente():
                         acked[ack_seq] = True
                         while base < total_pacotes and acked[base]:
                             base += 1
+
+            if ack_recebido_neste_ciclo:
+                tempo_inicio = time.time()
+
+            # Se passou muito tempo sem receber ACKs novos, encerrar
+            if time.time() - tempo_inicio > timeout_total:
+                print("\n[Cliente] ⚠️ Timeout geral atingido. Encerrando transmissão.")
+                break
 
         print("\n[Cliente] ✅ Comunicação finalizada.")
 
