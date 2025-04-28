@@ -2,6 +2,7 @@ import socket
 
 HOST = '127.0.0.1'
 PORT = 5000
+WINDOW_SIZE = 4
 
 def calcular_checksum(seq_num, payload):
     soma = seq_num + sum(ord(c) for c in payload)
@@ -20,6 +21,7 @@ def servidor():
             buffer = ""
             modo = ""
             pacotes_recebidos = {}
+            ultimo_seq_recebido = -1
 
             # Recebe o modo primeiro
             while "\n" not in buffer:
@@ -65,32 +67,22 @@ def servidor():
                     if checksum == esperado:
                         if seq_num not in pacotes_recebidos:
                             pacotes_recebidos[seq_num] = payload
+                            ultimo_seq_recebido = seq_num
+
+                        if modo == "GBN":
+                            # Só envia o ACK quando a janela está cheia (último da janela)
+                            if (ultimo_seq_recebido + 1) % WINDOW_SIZE == 0 or len(pacotes_recebidos) == 8:
+                                conn.sendall(f"ACK|{ultimo_seq_recebido}\n".encode())
+                                print(f"[Servidor] ✅ ACK cumulativo enviado até o pacote {ultimo_seq_recebido}\n")
+                        else:  # SR
                             conn.sendall(f"ACK|{seq_num}\n".encode())
-                            print(f"[Servidor] ✅ Pacote {seq_num} processado e ACK enviado.\n")
-                        else:
-                            print(f"[Servidor] ℹ️ Pacote {seq_num} duplicado, ignorado.")
+                            print(f"[Servidor] ✅ ACK individual enviado para o pacote {seq_num}\n")
                     else:
                         print(f"[Servidor] ❌ Checksum inválido para pacote {seq_num}. Ignorado.")
 
-            # ⬇️ Adicione este bloco para processar buffer final após conexão fechar
-            if buffer.strip():
-                print(f"[Servidor] ⚠️ Processando dados restantes no buffer final: '{buffer.strip()}'")
-                partes = buffer.strip().split("|")
-                if len(partes) == 3:
-                    try:
-                        seq_num = int(partes[0])
-                        payload = partes[1]
-                        checksum = int(partes[2])
-                        esperado = calcular_checksum(seq_num, payload)
-                        if checksum == esperado and seq_num not in pacotes_recebidos:
-                            pacotes_recebidos[seq_num] = payload
-                            print(f"[Servidor] ✅ Último pacote {seq_num} processado após fechamento da conexão.")
-                    except:
-                        print("[Servidor] ❌ Erro ao processar o último pacote.")
-
             if pacotes_recebidos:
                 mensagem_final = ''.join(pacotes_recebidos[i] for i in sorted(pacotes_recebidos))
-                print(f"\n[Servidor] ✅ Mensagem reconstruída: '{mensagem_final.rstrip()}'")
+                print(f"[Servidor] ✅ Mensagem reconstruída: '{mensagem_final.rstrip()}'")
             else:
                 print("[Servidor] ⚠️ Nenhum pacote válido recebido.")
 

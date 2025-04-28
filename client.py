@@ -11,7 +11,7 @@ def calcular_checksum(seq_num, payload):
     return soma % 256
 
 def criar_pacote(seq_num, payload):
-    payload = payload.ljust(TAMANHO_PACOTE)  # preenche com espaços
+    payload = payload.ljust(TAMANHO_PACOTE)
     checksum = calcular_checksum(seq_num, payload)
     return f"{seq_num}|{payload}|{checksum}"
 
@@ -29,9 +29,8 @@ def cliente():
 
     tamanho_msg = int(input("Digite o tamanho máximo da mensagem: "))
 
-    # Verifica se o tamanho da mensagem é menor que o tamanho do pacote
     if tamanho_msg < TAMANHO_PACOTE:
-        tamanho_msg = TAMANHO_PACOTE  # Ajusta o tamanho da mensagem
+        tamanho_msg = TAMANHO_PACOTE
 
     mensagem = input("Digite a mensagem a ser enviada: ")
 
@@ -52,7 +51,6 @@ def cliente():
         ack_recebido = set()
 
         while base < total_pacotes:
-            # Envia os pacotes dentro da janela
             while next_seq < base + WINDOW_SIZE and next_seq < total_pacotes:
                 pacote = criar_pacote(*pacotes[next_seq])
                 tempos_envio[next_seq] = time.time()
@@ -92,19 +90,23 @@ def cliente():
 
                     if ack_seq in tempos_envio:
                         rtt = time.time() - tempos_envio[ack_seq]
-                        print(f"[Cliente] ⬅️ ACK recebido do pacote {ack_seq} | RTT: {rtt:.3f}s")
+                        if modo == "GBN":
+                            print(f"[Cliente] ⬅️ ACK cumulativo recebido até o pacote {ack_seq} | RTT: {rtt:.3f}s")
+                        else:
+                            print(f"[Cliente] ⬅️ ACK recebido do pacote {ack_seq} | RTT: {rtt:.3f}s")
                     else:
-                        print(f"[Cliente] ⬅️ ACK recebido do pacote {ack_seq}")
+                        if modo == "GBN":
+                            print(f"[Cliente] ⬅️ ACK cumulativo recebido até o pacote {ack_seq}")
+                        else:
+                            print(f"[Cliente] ⬅️ ACK recebido do pacote {ack_seq}")
 
-                    acked[ack_seq] = True
-
-            # ⬇️ Atualiza o base fora do for
-            if modo == "GBN":
-                while base < total_pacotes and acked[base]:
-                    base += 1
-            else:  # SR
-                while base < total_pacotes and acked[base]:
-                    base += 1
+                    if modo == "GBN":
+                        if ack_seq >= base:
+                            base = ack_seq + 1
+                    else:  # SR
+                        acked[ack_seq] = True
+                        while base < total_pacotes and acked[base]:
+                            base += 1
 
         print("\n[Cliente] ✅ Comunicação finalizada.")
 
