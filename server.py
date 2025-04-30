@@ -70,7 +70,6 @@ def servidor():
                             ultimo_seq_recebido = seq_num
 
                         if modo == "GBN":
-                            # Só envia o ACK quando a janela está cheia (último da janela)
                             if (ultimo_seq_recebido + 1) % WINDOW_SIZE == 0 or len(pacotes_recebidos) == 8:
                                 conn.sendall(f"ACK|{ultimo_seq_recebido}\n".encode())
                                 print(f"[Servidor] ✅ ACK cumulativo enviado até o pacote {ultimo_seq_recebido}\n")
@@ -81,8 +80,11 @@ def servidor():
                         print(f"[Servidor] ❌ Checksum inválido para pacote {seq_num}. Ignorado.")
 
             if pacotes_recebidos:
-                mensagem_final = ''.join(pacotes_recebidos[i] for i in sorted(pacotes_recebidos))
-                print(f"[Servidor] ✅ Mensagem reconstruída: '{mensagem_final.rstrip()}'")
+                mensagem_final = ''.join(
+                    pacotes_recebidos[i] for i in sorted(pacotes_recebidos)
+                    if pacotes_recebidos[i].strip()  # Ignora pacotes vazios
+                )
+                print(f"[Servidor] ✅ Mensagem reconstruída: '{mensagem_final}'")
             else:
                 print("[Servidor] ⚠️ Nenhum pacote válido recebido.")
 

@@ -35,6 +35,16 @@ def cliente():
     mensagem = input("Digite a mensagem a ser enviada: ")
 
     pacotes = quebrar_mensagem(mensagem, tamanho_msg)
+
+    # Preencher pacotes vazios se a janela final não estiver completa (somente para GBN)
+    if modo == "GBN":
+        resto = len(pacotes) % WINDOW_SIZE
+        if resto != 0:
+            pacotes_faltando = WINDOW_SIZE - resto
+            inicio_seq = len(pacotes)
+            for i in range(pacotes_faltando):
+                pacotes.append((inicio_seq + i, ""))  # Payload vazio
+
     total_pacotes = len(pacotes)
 
     with socket.socket(socket.AF_INET, socket.SOCK_STREAM) as s:
