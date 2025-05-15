@@ -21,7 +21,8 @@ def servidor():
             buffer = ""
             modo = ""
             pacotes_recebidos = {}
-            ultimo_seq_recebido = -1
+            esperado_gbn = 0
+            contador_janela = 0
 
             while "\n" not in buffer:
                 dados = conn.recv(1024)
@@ -69,23 +70,36 @@ def servidor():
                         print("[Servidor] ❌ Erro ao interpretar pacote:", linha)
                         continue
 
-                    esperado = calcular_checksum(seq_num, payload)
-                    print(f"[Servidor] 📦 Pacote: seq={seq_num}, payload='{payload}', checksum={checksum} (esperado: {esperado})")
+                    esperado_checksum = calcular_checksum(seq_num, payload)
+                    print(f"[Servidor] 📦 Pacote: seq={seq_num}, payload='{payload}', checksum={checksum} (esperado: {esperado_checksum})")
 
-                    if checksum == esperado:
-                        if seq_num not in pacotes_recebidos:
+                    if modo == "GBN":
+                        if checksum == esperado_checksum and seq_num == esperado_gbn:
                             pacotes_recebidos[seq_num] = payload
-                            ultimo_seq_recebido = max(ultimo_seq_recebido, seq_num)
+                            esperado_gbn += 1
+                            contador_janela += 1
 
-                        if modo == "GBN":
-                            if (ultimo_seq_recebido + 1) % WINDOW_SIZE == 0 or len(pacotes_recebidos) == 8:
-                                conn.sendall(f"ACK|{ultimo_seq_recebido}\n".encode())
-                                print(f"[Servidor] ✅ ACK cumulativo enviado até o pacote {ultimo_seq_recebido}\n")
-                        else:  # SR
+                            if contador_janela == WINDOW_SIZE:
+                                conn.sendall(f"ACK|{seq_num}\n".encode())
+                                print(f"[Servidor] ✅ ACK cumulativo enviado até o pacote {seq_num}\n")
+                                contador_janela = 0
+                        else:
+                            ack_para = esperado_gbn - 1
+                            if ack_para >= 0:
+                                conn.sendall(f"ACK|{ack_para}\n".encode())
+                                print(f"[Servidor] ❌ Pacote fora de ordem ou corrompido. Reenviando ACK|{ack_para}\n")
+                            else:
+                                print("[Servidor] ⚠️ Ignorando pacote inválido antes do início válido.")
+                            contador_janela = 0  # reinicia a janela
+
+                    else:  # SR
+                        if checksum == esperado_checksum:
+                            if seq_num not in pacotes_recebidos:
+                                pacotes_recebidos[seq_num] = payload
                             conn.sendall(f"ACK|{seq_num}\n".encode())
                             print(f"[Servidor] ✅ ACK individual enviado para o pacote {seq_num}\n")
-                    else:
-                        print(f"[Servidor] ❌ Checksum inválido para pacote {seq_num}. Ignorado.\n")
+                        else:
+                            print(f"[Servidor] ❌ Checksum inválido para pacote {seq_num}. Ignorado.\n")
 
             if pacotes_recebidos:
                 mensagem_final = ''.join(
