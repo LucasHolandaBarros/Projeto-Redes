@@ -70,12 +70,12 @@ def cliente():
             while next_seq < base + WINDOW_SIZE and next_seq < total_pacotes:
                 if not acked[next_seq]:
                     corromper = (next_seq == pacote_com_erro and next_seq not in tempos_envio)
-                    if corromper:
-                        print(f"[Cliente] ⚠️ Simulando erro no pacote {next_seq}")
                     pacote = criar_pacote(*pacotes[next_seq], corromper=corromper)
                     tempos_envio[next_seq] = time.time()
                     s.sendall((pacote + "\n").encode())
                     print(f"[Cliente] ➡️ Enviado pacote {next_seq}: {pacote}")
+                    if corromper:
+                        print(f"[Cliente] ⚠️ Simulando erro no pacote {next_seq}")
                 next_seq += 1
 
             # Esperar por ACKs
@@ -134,7 +134,7 @@ def cliente():
             if time.time() - tempo_inicio > timeout_total:
                 print("\n[Cliente] ⏳ Timeout atingido. Reenviando pacotes não confirmados...\n")
                 tempo_inicio = time.time()
-                next_seq = base
+                # Não mexa em next_seq! Use variável temporária
                 for seq in range(base, min(base + WINDOW_SIZE, total_pacotes)):
                     if not acked[seq]:
                         corromper = False
