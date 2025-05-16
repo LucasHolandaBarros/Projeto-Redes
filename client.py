@@ -6,6 +6,7 @@ HOST = '127.0.0.1'
 PORT = 5000
 TAMANHO_PACOTE = 3
 WINDOW_SIZE = 4
+TIMEOUT = 3  # Timeout individual para GBN (em segundos)
 
 def calcular_checksum(seq_num, payload):
     soma = seq_num + sum(ord(c) for c in payload)
@@ -15,7 +16,7 @@ def criar_pacote(seq_num, payload, corromper=False):
     payload = payload.ljust(TAMANHO_PACOTE)
     checksum = calcular_checksum(seq_num, payload)
     if corromper:
-        checksum = (checksum + 1) % 256  # Simula corrupção
+        checksum = (checksum + 1) % 256
     return f"{seq_num}|{payload}|{checksum}"
 
 def quebrar_mensagem(msg, limite):
@@ -62,11 +63,8 @@ def cliente():
         acked = [False] * total_pacotes
         tempos_envio = {}
         ack_recebido = set()
-        timeout_total = 5
-        tempo_inicio = time.time()
 
         while base < total_pacotes:
-            # Enviar pacotes dentro da janela
             while next_seq < base + WINDOW_SIZE and next_seq < total_pacotes:
                 if not acked[next_seq]:
                     corromper = (next_seq == pacote_com_erro and next_seq not in tempos_envio)
@@ -78,7 +76,6 @@ def cliente():
                         print(f"[Cliente] ⚠️ Simulando erro no pacote {next_seq}")
                 next_seq += 1
 
-            # Esperar por ACKs
             resposta_buffer = ""
             try:
                 while "\n" not in resposta_buffer:
@@ -90,7 +87,6 @@ def cliente():
                 pass
 
             respostas = resposta_buffer.strip().split("\n")
-            ack_recebido_neste_ciclo = False
             for resposta in respostas:
                 partes = resposta.strip().split("|")
                 if len(partes) != 2:
@@ -104,13 +100,12 @@ def cliente():
                     continue
 
                 ack_seq = int(ack_seq_str)
-
                 if 0 <= ack_seq < total_pacotes:
                     if ack_seq in ack_recebido:
                         continue
 
                     ack_recebido.add(ack_seq)
-                    acked[ack_seq] = True  # ✅ Marca como ACK antes de usar
+                    acked[ack_seq] = True
 
                     if ack_seq in tempos_envio:
                         rtt = time.time() - tempos_envio[ack_seq]
@@ -122,28 +117,33 @@ def cliente():
                     if modo == "GBN":
                         if ack_seq >= base:
                             base = ack_seq + 1
-                    else:  # SR
+                            next_seq = base
+                    else:
                         while base < total_pacotes and acked[base]:
                             base += 1
 
-                    ack_recebido_neste_ciclo = True
+            # 🔁 Timeout (corrigido - apenas para o pacote base em GBN)
+            if modo == "GBN" and base < total_pacotes:
+                tempo_base = tempos_envio.get(base)
+                if tempo_base and (time.time() - tempo_base > TIMEOUT):
+                    print("\n[Cliente] ⏳ Timeout atingido. Reenviando pacotes não confirmados...\n")
+                    print(f"[Cliente] 🔁 (GBN) Reenviando a partir do pacote {base}")
+                    next_seq = base  # volta para reenviar todos a partir do base
 
-            if ack_recebido_neste_ciclo:
-                tempo_inicio = time.time()
-
-            if time.time() - tempo_inicio > timeout_total:
-                print("\n[Cliente] ⏳ Timeout atingido. Reenviando pacotes não confirmados...\n")
-                tempo_inicio = time.time()
-                # Não mexa em next_seq! Use variável temporária
+            # 🔁 Timeout para SR
+            if modo == "SR":
                 for seq in range(base, min(base + WINDOW_SIZE, total_pacotes)):
                     if not acked[seq]:
-                        corromper = False
-                        pacote = criar_pacote(*pacotes[seq], corromper=corromper)
-                        tempos_envio[seq] = time.time()
-                        s.sendall((pacote + "\n").encode())
-                        print(f"[Cliente] 🔁 Reenvio do pacote {seq}: {pacote}")
+                        tempo_envio = tempos_envio.get(seq)
+                        if tempo_envio and (time.time() - tempo_envio > TIMEOUT):
+                            print(f"\n[Cliente] ⏳ Timeout do pacote {seq}. Reenviando...\n")
+                            pacote = criar_pacote(*pacotes[seq])
+                            tempos_envio[seq] = time.time()
+                            s.sendall((pacote + "\n").encode())
+                            print(f"[Cliente] 🔁 Reenvio do pacote {seq}: {pacote}")
 
         s.sendall(b"FIM\n")
+        time.sleep(0.5)
         print("\n[Cliente] ✅ Comunicação finalizada.")
 
 if __name__ == "__main__":

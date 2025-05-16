@@ -43,7 +43,6 @@ def servidor():
                         break
                     buffer += data.decode()
                     if "FIM\n" in buffer:
-                        buffer = buffer.replace("FIM\n", "")
                         print("[Servidor] 🚪 Recebido sinal de término do cliente.")
                         break
                 except ConnectionResetError:
@@ -52,12 +51,17 @@ def servidor():
 
                 while "\n" in buffer:
                     linha, buffer = buffer.split("\n", 1)
-                    if not linha.strip():
+                    linha = linha.strip()
+                    if not linha or linha == "FIM":
                         continue
+
+                    if linha.count("|") < 2:
+                        buffer = linha + "\n" + buffer
+                        break
 
                     print(f"[Servidor] 🔍 Linha recebida bruta: '{linha}'")
 
-                    partes = linha.strip().split("|")
+                    partes = linha.split("|")
                     if len(partes) != 3:
                         print("[Servidor] ❌ Pacote inválido:", linha)
                         continue
@@ -80,7 +84,7 @@ def servidor():
                             contador_janela += 1
 
                             if contador_janela == WINDOW_SIZE:
-                                conn.sendall(f"ACK|{seq_num}\n".encode())
+                                conn.sendall(f"ACK|{esperado_gbn - 1}\n".encode())
                                 print(f"[Servidor] ✅ ACK cumulativo enviado até o pacote {seq_num}\n")
                                 contador_janela = 0
                         else:
@@ -90,7 +94,7 @@ def servidor():
                                 print(f"[Servidor] ❌ Pacote fora de ordem ou corrompido. Reenviando ACK|{ack_para}\n")
                             else:
                                 print("[Servidor] ⚠️ Ignorando pacote inválido antes do início válido.")
-                            contador_janela = 0  # reinicia a janela
+                            contador_janela = 0
 
                     else:  # SR
                         if checksum == esperado_checksum:
