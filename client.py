@@ -27,6 +27,29 @@ def quebrar_mensagem(msg, limite):
         pacotes.append((i // TAMANHO_PACOTE, payload))
     return pacotes
 
+def enviar_pacote(seq, pacotes, modo_erro, erro_seq, tempos_envio, s, simular_erro, pacote_com_erro):
+    agora = time.time()
+    seq_num, payload = pacotes[seq]
+    pacote = criar_pacote(seq_num, payload)
+
+    if modo_erro == "2" and seq == erro_seq and seq not in tempos_envio:
+        print(f"[Cliente] ⏳ Simulando timeout no pacote {seq} (não enviado)")
+        tempos_envio[seq] = agora - (TIMEOUT + 1)
+        return "timeout"
+
+    elif modo_erro == "3" and seq == erro_seq and seq not in tempos_envio:
+        pacote = criar_pacote(seq_num, payload, corromper=True)
+        print(f"[Cliente] ⚠️ Simulando erro de checksum no pacote {seq}")
+
+    elif modo_erro == "4" and seq == erro_seq and seq not in tempos_envio:
+        print(f"[Cliente] 🔁 Simulando envio fora de ordem. Adiando envio do pacote {seq}")
+        return "adiar"
+
+    tempos_envio[seq] = agora
+    s.sendall((pacote + "\n").encode())
+    print(f"[Cliente] ➡️ Enviado pacote {seq}: {pacote}")
+    return "enviado"
+
 def cliente():
     protocolo = input("Escolha o protocolo (1 - Go-Back-N, 2 - Repetição Seletiva): ")
     modo = "GBN" if protocolo == "1" else "SR"
@@ -46,9 +69,8 @@ def cliente():
             for i in range(pacotes_faltando):
                 pacotes.append((inicio_seq + i, ""))
 
-    # NOVO: escolha se haverá erro via número
     modo_erro = input("\nEscolha o modo de transmissão\n1 - Sem erros\n2 - Erro no Timeout\n3 - Erro no Checksum\n4 - Erro de Ordem\nOpção: ").strip()
-    simular_erro = (modo_erro == "2")
+    simular_erro = (modo_erro == "2" or modo_erro == "3" or modo_erro == "4")
     pacote_com_erro = -1
     if simular_erro:
         pacotes_validos = [seq for seq, payload in pacotes if payload.strip()]
@@ -76,14 +98,12 @@ def cliente():
         while base < total_pacotes:
             while next_seq < base + WINDOW_SIZE and next_seq < total_pacotes:
                 if not acked[next_seq]:
-                    corromper = (simular_erro and next_seq == pacote_com_erro and next_seq not in tempos_envio)
-                    pacote = criar_pacote(*pacotes[next_seq], corromper=corromper)
-                    tempos_envio[next_seq] = time.time()
-                    s.sendall((pacote + "\n").encode())
-                    print(f"[Cliente] ➡️ Enviado pacote {next_seq}: {pacote}")
-                    if corromper:
-                        print(f"[Cliente] ⚠️ Simulando erro no pacote {next_seq}")
-                next_seq += 1
+                    status = enviar_pacote(
+                        next_seq, pacotes, modo_erro, pacote_com_erro,
+                        tempos_envio, s, simular_erro, pacote_com_erro
+                    )
+                    if status != "adiar":
+                        next_seq += 1
 
             resposta_buffer = ""
             try:
@@ -124,22 +144,24 @@ def cliente():
                             print(f"[Cliente] ⬅️ ACK recebido do pacote {ack_seq} | RTT: {rtt:.3f}s")
 
                     if modo == "GBN":
-                        if ack_seq >= base:
-                            base = ack_seq + 1
-                            next_seq = base
+                        for i in range(base, ack_seq + 1):
+                            acked[i] = True
+                            ack_recebido.add(i)
+                        base = ack_seq + 1
+                        next_seq = base
                     else:
                         while base < total_pacotes and acked[base]:
                             base += 1
 
-            # 🔁 Timeout (corrigido - apenas para o pacote base em GBN)
+            # 🔁 Timeout (GBN)
             if modo == "GBN" and base < total_pacotes:
                 tempo_base = tempos_envio.get(base)
                 if tempo_base and (time.time() - tempo_base > TIMEOUT):
                     print("\n[Cliente] ⏳ Timeout atingido. Reenviando pacotes não confirmados...\n")
                     print(f"[Cliente] 🔁 (GBN) Reenviando a partir do pacote {base}")
-                    next_seq = base  # volta para reenviar todos a partir do base
+                    next_seq = base
 
-            # 🔁 Timeout para SR
+            # 🔁 Timeout (SR)
             if modo == "SR":
                 for seq in range(base, min(base + WINDOW_SIZE, total_pacotes)):
                     if not acked[seq]:
