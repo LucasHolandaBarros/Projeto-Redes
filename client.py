@@ -46,10 +46,19 @@ def cliente():
             for i in range(pacotes_faltando):
                 pacotes.append((inicio_seq + i, ""))
 
+    # NOVO: escolha se haverá erro via número
+    modo_erro = input("\nEscolha o modo de transmissão\n1 - Sem erros\n2 - Erro no Timeout\n3 - Erro no Checksum\n4 - Erro de Ordem\nOpção: ").strip()
+    simular_erro = (modo_erro == "2")
+    pacote_com_erro = -1
+    if simular_erro:
+        pacotes_validos = [seq for seq, payload in pacotes if payload.strip()]
+        if pacotes_validos:
+            pacote_com_erro = random.choice(pacotes_validos)
+            print(f"\n[Cliente] Pacotes com erro simulado: [{pacote_com_erro}]")
+    else:
+        print("\n[Cliente] Comunicação SEM erros será utilizada.")
+
     total_pacotes = len(pacotes)
-    pacotes_validos = [seq for seq, payload in pacotes if payload.strip()]
-    pacote_com_erro = random.choice(pacotes_validos)
-    print(f"[Cliente] Pacotes com erro simulado: [{pacote_com_erro}]")
 
     with socket.socket(socket.AF_INET, socket.SOCK_STREAM) as s:
         s.connect((HOST, PORT))
@@ -67,7 +76,7 @@ def cliente():
         while base < total_pacotes:
             while next_seq < base + WINDOW_SIZE and next_seq < total_pacotes:
                 if not acked[next_seq]:
-                    corromper = (next_seq == pacote_com_erro and next_seq not in tempos_envio)
+                    corromper = (simular_erro and next_seq == pacote_com_erro and next_seq not in tempos_envio)
                     pacote = criar_pacote(*pacotes[next_seq], corromper=corromper)
                     tempos_envio[next_seq] = time.time()
                     s.sendall((pacote + "\n").encode())
