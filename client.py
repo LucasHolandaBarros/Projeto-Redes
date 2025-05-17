@@ -41,10 +41,6 @@ def enviar_pacote(seq, pacotes, modo_erro, erro_seq, tempos_envio, s, simular_er
         pacote = criar_pacote(seq_num, payload, corromper=True)
         print(f"[Cliente] ⚠️ Simulando erro de checksum no pacote {seq}")
 
-    elif modo_erro == "4" and seq == erro_seq and seq not in tempos_envio:
-        print(f"[Cliente] 🔁 Simulando envio fora de ordem. Adiando envio do pacote {seq}")
-        return "adiar"
-
     tempos_envio[seq] = agora
     s.sendall((pacote + "\n").encode())
     print(f"[Cliente] ➡️ Enviado pacote {seq}: {pacote}")
@@ -81,6 +77,7 @@ def cliente():
         print("\n[Cliente] Comunicação SEM erros será utilizada.")
 
     total_pacotes = len(pacotes)
+    fora_de_ordem_enviado = False
 
     with socket.socket(socket.AF_INET, socket.SOCK_STREAM) as s:
         s.connect((HOST, PORT))
@@ -98,12 +95,28 @@ def cliente():
         while base < total_pacotes:
             while next_seq < base + WINDOW_SIZE and next_seq < total_pacotes:
                 if not acked[next_seq]:
+                    if modo_erro == "4" and next_seq == pacote_com_erro and not fora_de_ordem_enviado:
+                        print(f"[Cliente] ⏩ Pulando temporariamente o pacote {next_seq} para simular fora de ordem")
+                        next_seq += 1
+                        continue
+
                     status = enviar_pacote(
                         next_seq, pacotes, modo_erro, pacote_com_erro,
                         tempos_envio, s, simular_erro, pacote_com_erro
                     )
                     if status != "adiar":
                         next_seq += 1
+
+            # Envio do pacote atrasado (fora de ordem)
+            if modo_erro == "4" and not fora_de_ordem_enviado:
+                if pacote_com_erro not in tempos_envio:
+                    print(f"[Cliente] 🚀 Enviando agora o pacote fora de ordem: {pacote_com_erro}")
+                    seq_num, payload = pacotes[pacote_com_erro]
+                    pacote = criar_pacote(seq_num, payload)
+                    tempos_envio[pacote_com_erro] = time.time()
+                    s.sendall((pacote + "\n").encode())
+                    print(f"[Cliente] ➡️ Enviado pacote {pacote_com_erro}: {pacote}")
+                    fora_de_ordem_enviado = True
 
             resposta_buffer = ""
             try:
@@ -135,33 +148,8 @@ def cliente():
                     pacote = criar_pacote(*pacotes[ack_seq])
                     tempos_envio[ack_seq] = time.time()
                     s.sendall((pacote + "\n").encode())
-                    continue  # Não processa como ACK, apenas reenvia
+                    continue
 
-                if 0 <= ack_seq < total_pacotes:
-                    if ack_seq in ack_recebido:
-                        continue
-
-                    ack_recebido.add(ack_seq)
-                    acked[ack_seq] = True
-
-                    if ack_seq in tempos_envio:
-                        rtt = time.time() - tempos_envio[ack_seq]
-                        if modo == "GBN":
-                            print(f"[Cliente] ⬅️ ACK cumulativo recebido até o pacote {ack_seq} | RTT: {rtt:.3f}s")
-                        else:
-                            print(f"[Cliente] ⬅️ ACK recebido do pacote {ack_seq} | RTT: {rtt:.3f}s")
-
-                    if modo == "GBN":
-                        for i in range(base, ack_seq + 1):
-                            acked[i] = True
-                            ack_recebido.add(i)
-                        base = ack_seq + 1
-                        next_seq = base
-                    else:
-                        while base < total_pacotes and acked[base]:
-                            base += 1
-
-                ack_seq = int(ack_seq_str)
                 if 0 <= ack_seq < total_pacotes:
                     if ack_seq in ack_recebido:
                         continue
