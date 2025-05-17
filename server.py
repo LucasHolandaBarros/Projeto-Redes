@@ -103,7 +103,8 @@ def servidor():
                             conn.sendall(f"ACK|{seq_num}\n".encode())
                             print(f"[Servidor] ✅ ACK individual enviado para o pacote {seq_num}\n")
                         else:
-                            print(f"[Servidor] ❌ Checksum inválido para pacote {seq_num}. Ignorado.\n")
+                            conn.sendall(f"NACK|{seq_num}\n".encode())
+                            print(f"[Servidor] ❌ Checksum inválido para pacote {seq_num}. Enviando NACK|{seq_num}\n")
 
             if pacotes_recebidos:
                 mensagem_final = ''.join(

@@ -120,13 +120,46 @@ def cliente():
                 partes = resposta.strip().split("|")
                 if len(partes) != 2:
                     if resposta.strip():
-                        print(f"[Cliente] ❌ ACK inválido recebido: {resposta}")
+                        print(f"[Cliente] ❌ Resposta inválida recebida: {resposta}")
                     continue
 
                 tipo, ack_seq_str = partes
                 if not ack_seq_str.isdigit():
-                    print(f"[Cliente] ❌ ACK mal formatado: {resposta}")
+                    print(f"[Cliente] ❌ ACK/NACK mal formatado: {resposta}")
                     continue
+
+                ack_seq = int(ack_seq_str)
+
+                if tipo == "NACK":
+                    print(f"[Cliente] 🔁 NACK recebido para pacote {ack_seq}. Reenviando imediatamente...")
+                    pacote = criar_pacote(*pacotes[ack_seq])
+                    tempos_envio[ack_seq] = time.time()
+                    s.sendall((pacote + "\n").encode())
+                    continue  # Não processa como ACK, apenas reenvia
+
+                if 0 <= ack_seq < total_pacotes:
+                    if ack_seq in ack_recebido:
+                        continue
+
+                    ack_recebido.add(ack_seq)
+                    acked[ack_seq] = True
+
+                    if ack_seq in tempos_envio:
+                        rtt = time.time() - tempos_envio[ack_seq]
+                        if modo == "GBN":
+                            print(f"[Cliente] ⬅️ ACK cumulativo recebido até o pacote {ack_seq} | RTT: {rtt:.3f}s")
+                        else:
+                            print(f"[Cliente] ⬅️ ACK recebido do pacote {ack_seq} | RTT: {rtt:.3f}s")
+
+                    if modo == "GBN":
+                        for i in range(base, ack_seq + 1):
+                            acked[i] = True
+                            ack_recebido.add(i)
+                        base = ack_seq + 1
+                        next_seq = base
+                    else:
+                        while base < total_pacotes and acked[base]:
+                            base += 1
 
                 ack_seq = int(ack_seq_str)
                 if 0 <= ack_seq < total_pacotes:
