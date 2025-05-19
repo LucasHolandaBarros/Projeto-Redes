@@ -18,6 +18,7 @@
  Lucas de Holanda de Barros Soares: https://github.com/LucasHolandaBarros<br>
  Anderson Gomes: https://github.com/AndG087<br>
  Arthur Vinicius: https://github.com/Art-2005<br>
+ Miguel Becker: https://github.com/Becker1406
   
 </details>
 <details>
