@@ -8,16 +8,25 @@ TAMANHO_PACOTE = 3
 WINDOW_SIZE = 4
 TIMEOUT = 3  # Timeout individual para GBN (em segundos)
 
-def calcular_checksum(seq_num, payload):
-    soma = seq_num + sum(ord(c) for c in payload)
-    return soma % 256
+def rotl(val, r_bits, max_bits=32):
+    return ((val << r_bits) & (2**max_bits - 1)) | (val >> (max_bits - r_bits))
+
+def calcular_hash(seq_num, payload):
+    dados = f"{seq_num}|{payload}"
+    h = 0xABCDEF
+    for i, c in enumerate(dados):
+        v = ord(c)
+        h ^= (v * (i + 1))
+        h = rotl(h, 5)
+        h = (h * 31 + 0x5A5A5A5A) & 0xFFFFFFFF
+    return f"{h:08X}"
 
 def criar_pacote(seq_num, payload, corromper=False):
     payload = payload.ljust(TAMANHO_PACOTE)
-    checksum = calcular_checksum(seq_num, payload)
+    hash_val = calcular_hash(seq_num, payload)
     if corromper:
-        checksum = (checksum + 1) % 256
-    return f"{seq_num}|{payload}|{checksum}"
+        hash_val = hash_val[:-1] + chr((ord(hash_val[-1]) + 1) % 256)
+    return f"{seq_num}|{payload}|{hash_val}"
 
 def quebrar_mensagem(msg, limite):
     msg = msg[:limite]
@@ -39,7 +48,7 @@ def enviar_pacote(seq, pacotes, modo_erro, erro_seq, tempos_envio, s, simular_er
 
     elif modo_erro == "3" and seq == erro_seq and seq not in tempos_envio:
         pacote = criar_pacote(seq_num, payload, corromper=True)
-        print(f"[Cliente] ⚠️ Simulando erro de checksum no pacote {seq}")
+        print(f"[Cliente] ⚠️ Simulando erro de hash no pacote {seq}")
 
     tempos_envio[seq] = agora
     s.sendall((pacote + "\n").encode())
@@ -65,7 +74,7 @@ def cliente():
             for i in range(pacotes_faltando):
                 pacotes.append((inicio_seq + i, ""))
 
-    modo_erro = input("\nEscolha o modo de transmissão\n1 - Sem erros\n2 - Erro no Timeout\n3 - Erro no Checksum\n4 - Erro de Ordem\nOpção: ").strip()
+    modo_erro = input("\nEscolha o modo de transmissão\n1 - Sem erros\n2 - Erro no Timeout\n3 - Erro no Hash\n4 - Erro de Ordem\nOpção: ").strip()
     simular_erro = (modo_erro == "2" or modo_erro == "3" or modo_erro == "4")
     pacote_com_erro = -1
     if simular_erro:
@@ -107,7 +116,6 @@ def cliente():
                     if status != "adiar":
                         next_seq += 1
 
-            # Envio do pacote atrasado (fora de ordem)
             if modo_erro == "4" and not fora_de_ordem_enviado:
                 if pacote_com_erro not in tempos_envio:
                     print(f"[Cliente] 🚀 Enviando agora o pacote fora de ordem: {pacote_com_erro}")
@@ -174,7 +182,6 @@ def cliente():
                         while base < total_pacotes and acked[base]:
                             base += 1
 
-            # 🔁 Timeout (GBN)
             if modo == "GBN" and base < total_pacotes:
                 tempo_base = tempos_envio.get(base)
                 if tempo_base and (time.time() - tempo_base > TIMEOUT):
@@ -182,7 +189,6 @@ def cliente():
                     print(f"[Cliente] 🔁 (GBN) Reenviando a partir do pacote {base}")
                     next_seq = base
 
-            # 🔁 Timeout (SR)
             if modo == "SR":
                 for seq in range(base, min(base + WINDOW_SIZE, total_pacotes)):
                     if not acked[seq]:

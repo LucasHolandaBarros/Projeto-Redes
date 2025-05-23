@@ -4,9 +4,18 @@ HOST = '127.0.0.1'
 PORT = 5000
 WINDOW_SIZE = 4
 
-def calcular_checksum(seq_num, payload):
-    soma = seq_num + sum(ord(c) for c in payload)
-    return soma % 256
+def rotl(val, r_bits, max_bits=32):
+    return ((val << r_bits) & (2**max_bits - 1)) | (val >> (max_bits - r_bits))
+
+def calcular_hash(seq_num, payload):
+    dados = f"{seq_num}|{payload}"
+    h = 0xABCDEF
+    for i, c in enumerate(dados):
+        v = ord(c)
+        h ^= (v * (i + 1))
+        h = rotl(h, 5)
+        h = (h * 31 + 0x5A5A5A5A) & 0xFFFFFFFF
+    return h  # retorna inteiro
 
 def servidor():
     with socket.socket(socket.AF_INET, socket.SOCK_STREAM) as s:
@@ -74,12 +83,12 @@ def servidor():
                         try:
                             seq_num = int(partes[0])
                             payload = partes[1]
-                            checksum = int(partes[2])
+                            checksum = int(partes[2], 16)  # Conversão correta do hash em hex
                         except ValueError:
                             print("[Servidor] ❌ Erro ao interpretar pacote:", linha)
                             continue
 
-                        esperado_checksum = calcular_checksum(seq_num, payload)
+                        esperado_checksum = calcular_hash(seq_num, payload)
                         print(f"[Servidor] 📦 Pacote: seq={seq_num}, payload='{payload}', checksum={checksum} (esperado: {esperado_checksum})")
 
                         if modo == "GBN":
